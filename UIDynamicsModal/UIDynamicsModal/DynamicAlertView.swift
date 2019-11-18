@@ -29,14 +29,12 @@ class DynamicAlertView: UIView {
         setupView(title, message)
         
         animator = UIDynamicAnimator(referenceView: self)
-        
-        animator.delegate = self
     }
     
     func setupView(_ title: String, _ message: String) {
         backgroundView = UIView(frame: frame)
         backgroundView.backgroundColor = .black
-        backgroundView.alpha = 0.2
+        backgroundView.alpha = 0.1
         addSubview(backgroundView)
         
         dialogView = UIView()
@@ -49,6 +47,9 @@ class DynamicAlertView: UIView {
         
         let backgroundViewTap = UITapGestureRecognizer(target: self, action: #selector(tapHandler))
         backgroundView.addGestureRecognizer(backgroundViewTap)
+        
+        let panGesture = UIPanGestureRecognizer(target: self, action: #selector(panHandler))
+        dialogView.addGestureRecognizer(panGesture)
     }
     
     
@@ -67,7 +68,7 @@ class DynamicAlertView: UIView {
         selectedBehavior = behavior
         
         UIView.animate(withDuration: 0.3) {
-            self.backgroundView.alpha = 0.2
+            self.backgroundView.alpha = 0.1
         }
         
         switch behavior {
@@ -100,10 +101,15 @@ class DynamicAlertView: UIView {
     func dismiss(behavior: ModalBehavior) {
         switch behavior {
         case .attachment:
-            if attachment != nil {
-                animator.removeBehavior(attachment)
-            }
-            fallthrough
+            animator.removeAllBehaviors()
+            let gravity = UIGravityBehavior(items: [dialogView])
+            gravity.gravityDirection = CGVector(dx: 0.0, dy: 10.0)
+            animator.addBehavior(gravity)
+            
+            let itemBehavior = UIDynamicItemBehavior(items: [dialogView])
+            itemBehavior.addAngularVelocity(CGFloat(-Double.pi / 2), for: dialogView)
+            animator.addBehavior(itemBehavior)
+            
         case .snap:
             if snap != nil {
                 animator.removeBehavior(snap)
@@ -111,28 +117,47 @@ class DynamicAlertView: UIView {
             
             snap = UISnapBehavior(item: dialogView, snapTo: CGPoint(x: self.center.x, y: self.frame.size.height + dialogView.frame.height))
             animator.addBehavior(snap)
-        default:
-            self.removeFromSuperview()
         }
         
-        UIView.animate(withDuration: 0.3, animations: {
+        UIView.animate(withDuration: 0.4, animations: {
             self.backgroundView.alpha = 0
         }) { _ in
-            self.backgroundView.removeFromSuperview()
+            self.removeFromSuperview()
         }
-        
-        shouldClose = true
     }
     
     @objc func tapHandler(_ recognizer: UITapGestureRecognizer) {
         dismiss(behavior: selectedBehavior)
     }
-}
-
-extension DynamicAlertView: UIDynamicAnimatorDelegate {
-    func dynamicAnimatorDidPause(_ animator: UIDynamicAnimator) {
-        if shouldClose {
-            self.removeFromSuperview()
+    
+    @objc func panHandler(_ gesture: UIPanGestureRecognizer) {
+        let panLocationInView = gesture.location(in: self.backgroundView)
+        let panLocationInDialogView = gesture.location(in: self.dialogView)
+        
+        switch gesture.state {
+        case .began:
+            animator.removeAllBehaviors()
+            
+            let offset = UIOffset(horizontal: panLocationInDialogView.x - dialogView.bounds.midX, vertical: panLocationInDialogView.y - dialogView.bounds.midY)
+            attachment = UIAttachmentBehavior(item: dialogView, offsetFromCenter: offset, attachedToAnchor: panLocationInView)
+            
+            animator.addBehavior(attachment)
+            
+        case .changed:
+            attachment.anchorPoint = panLocationInView
+            
+        case .ended:
+            animator.removeAllBehaviors()
+            
+            snap = UISnapBehavior(item: dialogView, snapTo: self.backgroundView.center)
+            animator.addBehavior(snap)
+            
+            if gesture.translation(in: self.backgroundView).y > 200 {
+                dismiss(behavior: .attachment)
+            }
+            
+        default:
+            break
         }
     }
 }
